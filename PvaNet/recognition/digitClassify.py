@@ -1,0 +1,35 @@
+# -*- coding:utf-8 -*-
+import sys
+import _init_paths
+import cv2
+import caffe
+
+def set_mode(mode = 'gpu', gpu_id = 0):
+    if mode == 'gpu':
+        caffe.set_mode_gpu()
+        caffe.set_device(gpu_id)
+    elif mode == 'cpu':
+        caffe.set_mode_cpu()
+    else:
+        print "Please set mode = 'cpu' or 'gpu'"
+
+def load_net(net_pt, net_weight):
+    net = caffe.Net(net_pt, net_weight, caffe.TEST)
+    transformer = caffe.io.Transformer({'data': net.blobs['data'].data.shape})
+    transformer.set_transpose('data', (2, 0, 1))
+    return net, transformer
+
+def classify(image, net, transformer, labels):
+    net.blobs['data'].reshape(1, 3, 224, 224)
+    net.blobs['data'].data[...] = [transformer.preprocess('data', image)]
+    out = net.forward()
+    result = net.blobs['prob'].data[0].flatten().argsort()
+    score = sorted(net.blobs['prob'].data[0].flatten())
+    digit_result = []
+    for digit in result:
+        digit_result.append(labels[digit])
+    digit_result.reverse()
+    digit_result_re = digit_result
+    score.reverse()
+    score_re = score
+    return digit_result_re, score_re

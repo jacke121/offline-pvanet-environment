@@ -1,0 +1,10 @@
+1.按以下顺序执行安装
+sudo dpkg -i openssh-client_6.6p1-2ubuntu1_amd64.deb
+sudo dpkg -i openssh-sftp-server_6.6p1-2ubuntu1_amd64.deb
+sudo dpkg -i libck-connector0_0.4.5-3.1ubuntu2_amd64.deb
+sudo dpkg -i openssh-server_6.6p1-2ubuntu1_amd64.deb
+sudo dpkg -i ssh_6.6p1-2ubuntu1_all.deb
+
+2.安装后输入以下命令：ps -e|grep sshd
+若看到sshd，就说明ssh-server已经启动了。
+若未启动，尝试以下命令：/etc/init.d/ssh start

@@ -1,0 +1,188 @@
+#!/usr/bin/env python
+
+# --------------------------------------------------------
+# Fast R-CNN
+# Copyright (c) 2015 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+# Written by Ross Girshick
+# --------------------------------------------------------
+
+"""Train a Fast R-CNN network on a region of interest database."""
+
+import _init_paths
+from fast_rcnn.train import get_training_roidb, train_net
+from fast_rcnn.config import cfg, cfg_from_file, cfg_from_list, get_output_dir
+from datasets.factory import get_imdb
+import datasets.imdb
+import caffe
+import argparse
+import pprint
+import numpy as np
+import sys
+
+from caffe.proto import caffe_pb2
+from google.protobuf import text_format
+
+CLASSES = ['Croissant','Pineapple','Coconut','Cheese','Baguette','Walnut','PorkFloss','Shit'];
+
+def parse_args():
+    """
+    Parse input arguments
+    """
+    parser = argparse.ArgumentParser(description='Train a Fast R-CNN network')
+    parser.add_argument('--gpu', dest='gpu_id',
+                        help='GPU device id to use [0]',
+                        default=0, type=int)
+    parser.add_argument('--solver', dest='solver',
+                        help='solver prototxt',
+                        default='model/train/solver.prototxt', type=str)
+    parser.add_argument('--iters', dest='max_iters',
+                        help='number of iterations to train',
+                        default=100000, type=int)
+    parser.add_argument('--weights', dest='pretrained_model',
+                        help='initialize with pretrained model weights',
+                        default='model/train/original_train.model', type=str)
+    parser.add_argument('--cfg', dest='cfg_file',
+                        help='optional config file',
+                        default='model/train/train.yml', type=str)
+    parser.add_argument('--imdb', dest='imdb_name',
+                        help='dataset to train on',
+                        default='voc_2007_trainval', type=str)
+    parser.add_argument('--rand', dest='randomize',
+                        help='randomize (do not use a fixed seed)',
+                        action='store_true')
+    parser.add_argument('--set', dest='set_cfgs',
+                        help='set config keys', default=None,
+                        nargs=argparse.REMAINDER)
+    parser.add_argument('--trainproto', dest='train_prototxt',
+                        help='Input network prototxt file', default='model/train/train.prototxt',
+                        nargs=argparse.REMAINDER)
+
+    #if len(sys.argv) == 1:
+    #    parser.print_help()
+    #    sys.exit(1)
+
+    args = parser.parse_args()
+    return args
+# change num_classes in train_prototxt by len of CLASSES (=> cls_len)
+def change_train_prototxt(train_prototxt_file, cls_len):
+    net = caffe_pb2.NetParameter()
+    f = open(train_prototxt_file, 'r')
+    text_format.Merge(f.read(), net)
+    # judge whether num_classes is equal to len(CLASSES)
+    num_str_left = ''
+    for layer in net.layer:
+        if layer.name == 'input-data':
+            param_str = layer.python_param.param_str.encode('gbk')
+            num_str =  filter(str.isdigit, param_str)
+            num_cls = int(num_str)
+            num_str_left = param_str[0:param_str.find(num_str)]
+            if num_cls == cls_len:
+                f.close()
+                return True
+            else:
+                break
+    # if not equal
+    for layer in net.layer:
+        if layer.name == 'input-data' or layer.name == 'roi-data':
+            layer.python_param.param_str = num_str_left + str(cls_len)
+        if layer.name == 'cls_score':
+            layer.inner_product_param.num_output = cls_len
+        if layer.name == 'bbox_pred':
+            layer.inner_product_param.num_output = cls_len * 4
+
+    f = open(train_prototxt_file, 'w')
+    f.write(text_format.MessageToString(net))
+    f.close()
+    return False
+
+def combined_roidb(imdb_names, classes):
+    def get_roidb(imdb_name):
+        imdb = get_imdb(imdb_name)
+        # set classes of train in interface
+        # no need into pascal_voc to reset self._classes
+        imdb.set_classes(classes)
+        print 'Loaded dataset `{:s}` for training'.format(imdb.name)
+        imdb.set_proposal_method(cfg.TRAIN.PROPOSAL_METHOD)
+        print 'Set proposal method: {:s}'.format(cfg.TRAIN.PROPOSAL_METHOD)
+        roidb = get_training_roidb(imdb)
+
+        return roidb
+
+    roidbs = [get_roidb(s) for s in imdb_names.split('+')]
+    roidb = roidbs[0]
+    if len(roidbs) > 1:
+        for r in roidbs[1:]:
+            roidb.extend(r)
+        imdb = datasets.imdb.imdb(imdb_names)
+    else:
+        imdb = get_imdb(imdb_names)
+    return imdb, roidb
+
+def set_mode(mode = 'gpu', gpu_id = 0):
+    if mode == 'gpu':
+        caffe.set_mode_gpu()
+        caffe.set_device(gpu_id)
+    elif mode == 'cpu':
+        caffe.set_mode_cpu()
+    else:
+        print "Please set mode = 'cpu' or 'gpu'"
+
+def train(classes,
+          cfg_file, solver_proto, train_prototxt, pretrained_model, max_iters, imdb_name = 'voc_2007_trainval',
+          set_cfgs = None):
+    if cfg_file is not None:
+        cfg_from_file(cfg_file)
+    if set_cfgs is not None:
+        cfg_from_list(set_cfgs)
+    if train_prototxt is not None:
+        change_train_prototxt(train_prototxt,len(classes)+1) # add 1 -- should consider background
+    imdb, roidb = combined_roidb(imdb_name, classes)
+    print imdb.classes
+    print '{:d} roidb entries'.format(len(roidb))
+
+    output_dir = get_output_dir(imdb)
+    print 'Output will be saved to `{:s}`'.format(output_dir)
+
+    train_net(solver_proto, roidb, output_dir,
+              pretrained_model=pretrained_model,
+              max_iters=max_iters)
+
+
+if __name__ == '__main__':
+    args = parse_args()
+
+    print('Called with args:')
+    print(args)
+
+    if args.cfg_file is not None:
+        cfg_from_file(args.cfg_file)
+    if args.set_cfgs is not None:
+        cfg_from_list(args.set_cfgs)
+    if args.train_prototxt is not None:
+        change_train_prototxt(args.train_prototxt,len(CLASSES)+1) # add 1 -- should consider background 
+
+    cfg.GPU_ID = args.gpu_id
+
+    print('Using config:')
+    pprint.pprint(cfg)
+
+    if not args.randomize:
+        # fix the random seeds (numpy and caffe) for reproducibility
+        np.random.seed(cfg.RNG_SEED)
+        caffe.set_random_seed(cfg.RNG_SEED)
+
+    # set up caffe
+    caffe.set_mode_gpu()
+    caffe.set_device(args.gpu_id)
+
+    imdb, roidb = combined_roidb(args.imdb_name)
+    print imdb.classes
+    print '{:d} roidb entries'.format(len(roidb))
+
+    output_dir = get_output_dir(imdb)
+    print 'Output will be saved to `{:s}`'.format(output_dir)
+
+    train_net(args.solver, roidb, output_dir,
+              pretrained_model=args.pretrained_model,
+              max_iters=args.max_iters)
