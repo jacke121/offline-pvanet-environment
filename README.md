@@ -70,7 +70,23 @@
   sudo dpkg -i libboost-python-dev_1.54.0.1ubuntu1_amd64.deb
   ```
 
-### 安装protobuf、atlas、hdf5、glog
+### 安装blas
+
+BLAS是一个数学函数接口标准，有很多个实现。按照Caffe官方ubuntu的安装文档默认安装的是ATLAS。这个版本的BLAS不能利用多核CPU，我们将其换为OpenBLAS，可以利用多核CPU并行计算，加快Caffe的分类速度。
+
+### 安装atlas
+
+同上，找到atlas目录下，按照说明安装即可
+
+### 安装openBLAS
+
+进入到openblas目录，解压其中任何一个
+
+1. `make -j3`
+2. `sudo make install`，openblas即被安装在opt/OpenBLAS目录下
+3. `sudo ln -s /opt/OpenBLAS/lib/libopenblas_nehalemp-r0.2.20.so /usr/lib/x86_..../libopenblas.so.0`
+
+### 安装protobuf、hdf5、glog
 
 * 同上
 
@@ -125,10 +141,11 @@
 * `caffe-for-pvanet`是配置好的用anaconda环境，纯cpu编译的caffe版本，相应更改可自行设置
 
 1. 解压`caffe-for-pvanet.tar.gz`
-2. `make all -j`
-3. `make pycaffe -j`
-4. 将`python`目录下编译好的`_caffe.so`拷贝至`PvaNet/recognition/distribute/python/caffe`目录下
-5. 将`build/lib`目录下的文件拷贝至`PvaNet/recognition/distribute/build/lib`目录下
+2. 注意配置blas的选项和路径
+3. `make all -j`
+4. `make pycaffe -j`
+5. 将`python`目录下编译好的`_caffe.so`拷贝至`PvaNet/recognition/distribute/python/caffe`目录下
+6. 将`build/lib`目录下的文件拷贝至`PvaNet/recognition/distribute/build/lib`目录下
 
 
 
